@@ -1,12 +1,12 @@
 import io
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import requests
+from plotly.subplots import make_subplots
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -91,18 +91,38 @@ def _find_col(df: pd.DataFrame, candidates: list[str]) -> str:
 
 def normalize_surveillance_df(df: pd.DataFrame, is_regional: bool) -> pd.DataFrame:
     """Standardize date, age group ('Tous âges'), region code, and incidence rates."""
-    date_col = _find_col(df, ["date_de_passage", "date", "semaine"])
-    age_col = _find_col(df, ["sursaud_cl_age", "cl_age", "classe_d_age"])
-    er_col = _find_col(df, ["taux_passages_urgences", "passages_urgences"])
-    sos_col = _find_col(df, ["taux_actes_sos", "actes_sos"])
+    date_col = _find_col(df, ["date_complet", "date_de_passage", "date", "semaine"])
+    age_col = _find_col(
+        df, ["sursaud_cl_age_gene", "sursaud_cl_age", "cl_age", "classe_d_age"]
+    )
+    er_col = _find_col(
+        df,
+        [
+            "taux_passages_grippe_sau",
+            "taux_passages_covid_sau",
+            "taux_passages_urgences",
+            "passages_urgences",
+        ],
+    )
+    sos_col = _find_col(
+        df,
+        [
+            "taux_actes_grippe_sos",
+            "taux_actes_covid_sos",
+            "taux_actes_sos",
+            "actes_sos",
+        ],
+    )
 
-    # Filter to all-ages aggregate ("0" or "Tous âges")
+    # Filter to all-ages aggregate ("Tous âges" or legacy code "0")
     age_series = df[age_col].astype(str).str.strip()
     df = df[age_series.isin(["0", "Tous âges", "tous ages"])].copy()
 
-    # Parse ISO week or Monday date
-    if "semaine" in date_col.lower() and df[date_col].astype(str).str.contains("-S").any():
-        # Convert 'YYYY-Sww' to Monday of that ISO week
+    # Parse ISO week or Monday date (date_complet)
+    if (
+        "semaine" in date_col.lower()
+        and df[date_col].astype(str).str.contains("-S").any()
+    ):
         df["week_date"] = pd.to_datetime(
             df[date_col].astype(str).str.replace("-S", "-W") + "-1",
             format="%G-W%V-%u",
@@ -124,14 +144,23 @@ def normalize_surveillance_df(df: pd.DataFrame, is_regional: bool) -> pd.DataFra
     df = df[df["week_date"] >= cutoff].dropna(subset=["week_date"])
 
     if is_regional:
-        reg_col = _find_col(df, ["reg", "code_region", "region"])
+        reg_col = _find_col(df, ["region", "code_region", "reg"])
         df["reg_code"] = (
             df[reg_col].astype(str).str.replace(r"\.0$", "", regex=True).str.zfill(2)
         )
         df = df[df["reg_code"].isin(METRO_REGIONS)].copy()
         df["reg_name"] = df["reg_code"].map(METRO_REGIONS)
         return (
-            df[["week_date", "week_label", "reg_code", "reg_name", "er_rate", "sos_rate"]]
+            df[
+                [
+                    "week_date",
+                    "week_label",
+                    "reg_code",
+                    "reg_name",
+                    "er_rate",
+                    "sos_rate",
+                ]
+            ]
             .sort_values(["week_date", "reg_code"])
             .drop_duplicates(subset=["week_date", "reg_code"], keep="last")
         )
@@ -316,16 +345,38 @@ def build_figure(
                         label="Map: Grippe (Flu)",
                         method="update",
                         args=[
-                            {"visible": [True, False, True, True, "legendonly", "legendonly"]},
-                            {"annotations[0].text": f"Regional Flu ER Visits ({flu_week_str})"},
+                            {
+                                "visible": [
+                                    True,
+                                    False,
+                                    True,
+                                    True,
+                                    "legendonly",
+                                    "legendonly",
+                                ]
+                            },
+                            {
+                                "annotations[0].text": f"Regional Flu ER Visits ({flu_week_str})"
+                            },
                         ],
                     ),
                     dict(
                         label="Map: COVID-19",
                         method="update",
                         args=[
-                            {"visible": [False, True, True, True, "legendonly", "legendonly"]},
-                            {"annotations[0].text": f"Regional COVID-19 ER Visits ({covid_week_str})"},
+                            {
+                                "visible": [
+                                    False,
+                                    True,
+                                    True,
+                                    True,
+                                    "legendonly",
+                                    "legendonly",
+                                ]
+                            },
+                            {
+                                "annotations[0].text": f"Regional COVID-19 ER Visits ({covid_week_str})"
+                            },
                         ],
                     ),
                 ],
@@ -366,7 +417,7 @@ def main() -> None:
     fig = build_figure(geojson, flu_reg, covid_reg, flu_nat, covid_nat)
     plot_html = fig.to_html(full_html=False, include_plotlyjs="cdn")
 
-    updated_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    updated_utc = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     html_page = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
