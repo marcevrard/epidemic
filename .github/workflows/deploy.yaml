@@ -32,9 +32,6 @@ jobs:
         run: uv sync --locked --no-dev
 
       - name: Fetch latest epidemiological data
-        # Uncomment and set if pulling from an external GitHub data repo:
-        # env:
-        #   GITHUB_DATA_BASE_URL: https://raw.githubusercontent.com/<owner>/<repo>/main/data
         run: uv run build-dashboard
 
       - name: Commit and push updated CSV snapshots
@@ -66,3 +63,41 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout latest branch tip
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Install uv and set up Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install locked dependencies
+        run: uv sync --locked --no-dev
+
+      - name: Build Plotly dashboard
+        run: uv run build-dashboard
+
+      - name: Verify generated static site
+        run: |
+          if [ ! -s "_site/index.html" ]; then
+            echo "Error: _site/index.html does not exist or is empty." >&2
+            exit 1
+          fi
+          echo "Verified _site/index.html ($(wc -c < _site/index.html) bytes)."
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload static site artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: "_site"
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
