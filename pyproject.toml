@@ -1,0 +1,24 @@
+[project]
+name = "epidemic"
+version = "0.1.0"
+description = "Daily French regional and national epidemiological surveillance dashboard (Flu & COVID-19)"
+readme = "README.md"
+authors = [
+    { name = "marcevrard", email = "marc.evrard@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "pandas>=3.0.6",
+    "plotly>=7.1.0",
+    "requests>=2.32.0",
+]
+
+[project.scripts]
+build-dashboard = "epidemic.build_dashboard:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/epidemic"]

@@ -1,0 +1,64 @@
+name: Update Epidemic Dashboard and Deploy to Pages
+
+on:
+  schedule:
+    # Runs once daily at 06:00 UTC
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv and set up Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install locked dependencies
+        run: uv sync --locked --no-dev
+
+      - name: Fetch latest data and generate Plotly dashboard
+        # Uncomment and set if pulling from an external GitHub data repo:
+        # env:
+        #   GITHUB_DATA_BASE_URL: https://raw.githubusercontent.com/<owner>/<repo>/main/data
+        run: uv run build-dashboard
+
+      - name: Commit updated CSV data snapshots to GitHub repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/*.csv
+          git diff --cached --quiet || git commit -m "chore(data): daily epidemiological data update"
+          git push
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload static site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "_site"
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
